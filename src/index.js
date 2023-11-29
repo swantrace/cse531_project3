@@ -2,13 +2,36 @@ const fs = require("fs");
 const path = require("path");
 const Branch = require("./Branch");
 const Customer = require("./Customer");
-const INPUT_FILE_PATH = path.join(__dirname, "../input.json");
-const OUTPUT_FILE_PATH = path.join(__dirname, "../output.txt");
+const MONOTONIC_WRITES_INPUT_FILE_PATH = path.join(
+  __dirname,
+  "../input.monotonic_writes.json"
+);
+const MONOTONIC_WRITES_OUTPUT_FILE_PATH = path.join(
+  __dirname,
+  "../output.monotonic_writes.json"
+);
+const READ_WRITES_INPUT_FILE_PATH = path.join(
+  __dirname,
+  "../input.read_writes.json"
+);
+const READ_WRITES_OUTPUT_FILE_PATH = path.join(
+  __dirname,
+  "../output.read_writes.json"
+);
 const BASE_PORT = process.env.BASE_PORT || 5000;
 
-async function main() {
+main(MONOTONIC_WRITES_INPUT_FILE_PATH, MONOTONIC_WRITES_OUTPUT_FILE_PATH)
+  .then(() => {
+    main(READ_WRITES_INPUT_FILE_PATH, READ_WRITES_OUTPUT_FILE_PATH);
+  })
+  .catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+
+async function main(INPUT_FILE_PATH, OUTPUT_FILE_PATH) {
   // Remove the content of the output.txt file
-  emptyOutputContent();
+  emptyOutputContent(OUTPUT_FILE_PATH);
 
   // parse the input json
   const input = JSON.parse(fs.readFileSync(INPUT_FILE_PATH, "utf8"));
@@ -25,7 +48,7 @@ async function main() {
   // process customer events
   const customerItems = await processCustomers(customers);
 
-  writeJSONFiles(branchItems, customerItems);
+  writeJSONFiles(branchItems, customerItems, OUTPUT_FILE_PATH);
 
   // shutdown the servers
   await shutdownServers();
@@ -45,9 +68,9 @@ async function shutdownServers() {
   }
 }
 
-function emptyOutputContent() {
+function emptyOutputContent(OUTPUT_FILE_PATH) {
   try {
-    fs.writeFileSync("output.txt", "", "utf8");
+    fs.writeFileSync(OUTPUT_FILE_PATH, "", "utf8");
     console.log("File content removed successfully!");
   } catch (err) {
     console.error("Error writing to the file:", err);
@@ -59,14 +82,18 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function writeJSONFiles(_, customerItems) {
-  customerItems.forEach(({ id, recv }) => {
-    fs.appendFileSync(
-      OUTPUT_FILE_PATH,
-      JSON.stringify({ id, recv }) + "\n",
-      "utf8"
-    );
-  });
+function writeJSONFiles(branchItems, customerItems, OUTPUT_FILE_PATH) {
+  console.log("Branches:", branchItems);
+  console.log("Customers:", customerItems);
+  fs.writeFileSync(
+    OUTPUT_FILE_PATH,
+    JSON.stringify(
+      customerItems.map(({ id, balance }) => ({ id, balance })),
+      null,
+      2
+    ),
+    "utf8"
+  );
 }
 
 async function initializeBranches(branches) {
@@ -82,21 +109,14 @@ async function initializeBranches(branches) {
 
 async function processCustomers(customers) {
   const customerItems = [];
-  const promises = [];
   for (const customerData of customers) {
     const customer = new Customer(customerData.id);
-    customer.createStub();
     customerItems.push(customer);
     const customerEvents = customerData.events.map((event) => ({
       ...event,
-      branchId: customerData.id,
+      branchId: event.dest,
     }));
     await customer.executeEvents(customerEvents);
   }
   return customerItems;
 }
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});

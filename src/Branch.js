@@ -26,46 +26,54 @@ const BASE_PORT = process.env.BASE_PORT || 5000;
 
 class Branch {
   static servers = [];
-  static ids = [];
+  static ids = new Set();
+  static branchClients = new Map();
   constructor(id, balance) {
     this.id = id;
     this.balance = balance;
-    Branch.ids.push(id);
+    Branch.ids.add(id);
   }
 
   createBranchClient(port) {
-    return new branchToBranchPackage.BranchToBranch(
-      `localhost:${port}`,
-      grpc.credentials.createInsecure()
-    );
+    if (Branch.branchClients.has(port)) {
+      return Branch.branchClients.get(port);
+    } else {
+      const branchClient = new branchToBranchPackage.BranchToBranch(
+        `localhost:${port}`,
+        grpc.credentials.createInsecure()
+      );
+      Branch.branchClients.set(port, branchClient);
+      return branchClient;
+    }
   }
 
   async propagateChangeToOtherBranches(amount, action) {
-    const currentPort = BASE_PORT + this.id;
     const promises = [];
-    for (let port = BASE_PORT + 1; port <= BASE_PORT + 50; port++) {
-      if (port === currentPort) continue;
-      const promise = new Promise((resolve, reject) => {
-        const callback = (error, response) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve(response);
+    for (let id of Array.from(Branch.ids)) {
+      if (id === this.id) continue;
+      const promise = new Promise(
+        ((resolve, reject) => {
+          const callback = (error, response) => {
+            if (error) {
+              reject(error);
+            } else {
+              resolve(response);
+            }
+          };
+          const branchClient = this.createBranchClient(BASE_PORT + id);
+          if (action === "deposit") {
+            branchClient.propagateDeposit(
+              { branchId: this.id, amount },
+              callback
+            );
+          } else if (action === "withdraw") {
+            branchClient.propagateWithdraw(
+              { branchId: this.id, amount },
+              callback
+            );
           }
-        };
-        const branchClient = this.createBranchClient(port);
-        if (action === "deposit") {
-          branchClient.propagateDeposit(
-            { branchId: this.id, amount },
-            callback
-          );
-        } else if (action === "withdraw") {
-          branchClient.propagateWithdraw(
-            { branchId: this.id, amount },
-            callback
-          );
-        }
-      });
+        }).bind(this)
+      );
       promises.push(promise);
     }
     await Promise.all(promises);

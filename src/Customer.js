@@ -24,17 +24,24 @@ const customerToBranchPackage = grpc.loadPackageDefinition(
 const BASE_PORT = process.env.BASE_PORT || 5000;
 
 class Customer {
+  static stubs = new Map();
   constructor(id) {
     this.id = id;
     this.recv = [];
     this.balance = 0;
   }
 
-  createStub() {
-    this.stub = new customerToBranchPackage.CustomerToBranch(
-      `localhost:${BASE_PORT + this.id}`,
-      grpc.credentials.createInsecure()
-    );
+  createStub(branchId) {
+    if (Customer.stubs.has(branchId)) {
+      return Customer.stubs.get(branchId);
+    } else {
+      const stub = new customerToBranchPackage.CustomerToBranch(
+        `localhost:${BASE_PORT + branchId}`,
+        grpc.credentials.createInsecure()
+      );
+      Customer.stubs.set(branchId, stub);
+      return stub;
+    }
   }
 
   async executeEvents(events = []) {
@@ -73,7 +80,8 @@ class Customer {
 
   deposit(branchId, amount) {
     return new Promise((resolve, reject) => {
-      this.stub.deposit({ branchId, amount }, (error, response) => {
+      const stub = this.createStub(branchId);
+      stub.deposit({ branchId, amount }, (error, response) => {
         if (error) {
           console.error(
             `Deposit error for Customer ${this.id} to Branch ${branchId}: ${error.message}`
@@ -91,7 +99,8 @@ class Customer {
 
   withdraw(branchId, amount) {
     return new Promise((resolve, reject) => {
-      this.stub.withdraw({ branchId, amount }, (error, response) => {
+      const stub = this.createStub(branchId);
+      stub.withdraw({ branchId, amount }, (error, response) => {
         if (error) {
           console.error(
             `Withdraw error for Customer ${this.id} to Branch ${branchId}: ${error.message}`
@@ -109,7 +118,8 @@ class Customer {
 
   query(branchId) {
     return new Promise((resolve, reject) => {
-      this.stub.query({ branchId }, (error, response) => {
+      const stub = this.createStub(branchId);
+      stub.query({ branchId }, (error, response) => {
         if (error) {
           console.error(
             `Query error for Customer ${this.id} on Branch ${branchId}: ${error.message}`
